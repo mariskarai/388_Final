@@ -64,58 +64,70 @@ static void steering(int pos);
  *      Post condition: 
  *          Checks the LiDAR distance and configures LEDs
  *******************************************************************************/
-static void auto_brake()
-{
-    // Task-1&2: 
-    // Your code goes here (Use Lab 2 & 4 for reference)
-    // Check the project document to understand the task
-  int new_dist = 0
 
-  while (new_dist == 0)
-  {
+static void auto_brake()
+//add while loop
+//checksum
+{
     uint16_t dist = 0;
 
-    if ('Y' == ser_read() && 'Y' == ser_read())
+    // Look for TFmini frame header: 'Y' 'Y' (0x59 0x59)
+    if (ser_read() == 'Y' && ser_read() == 'Y')
     {
-      uint8_t dist_l = ser_read();
-      uint8_t dist_h = ser_read();
+        uint8_t dist_l = ser_read();
+        uint8_t dist_h = ser_read();
 
-      dist = (dist_h << 8) | dist_l;
+        dist = (dist_h << 8) | dist_l;
 
-      for (int i = 0; i < 5; i++) ser_read;
+        // Skip strength + reserved + checksum (5 bytes)
+        for (int i = 0; i < 5; i++) {
+            ser_read();
+        }
     }
 
-    if (dist == 0 || dist > 1200) return;
+    // If no valid distance, don't change LEDs
+    if (dist == 0 || dist > 1200) {
+        return;
+    }
 
+    // Debug print
+    ser_printf("Distance: %d\n", dist);
+
+    // LED logic (mutually exclusive)
     if (dist > 200)
     {
-      gpio_write(GPIO_13, OFF);
-      gpio_write(GPIO_12, ON);
-      gpio_write(GPIO_11, OFF);
+        // Safe - Green
+        gpio_write(GPIO_13, OFF); // RED
+        gpio_write(GPIO_12, ON);  // GREEN
+        gpio_write(GPIO_11, OFF); // BLUE
     }
     else if (dist > 100 && dist <= 200)
     {
-      gpio_write(GPIO_13, ON);
-      gpio_write(GPIO_12, ON);
-      gpio_write(GPIO_11, OFF);
+        // Light brake - Yellow (Red + Green)
+        gpio_write(GPIO_13, ON);
+        gpio_write(GPIO_12, ON);
+        gpio_write(GPIO_11, OFF);
     }
     else if (dist > 60 && dist <= 100)
     {
-      gpio_write(GPIO_13, ON);
-      gpio_write(GPIO_12, OFF);
-      gpio_write(GPIO_11, OFF);
+        // Hard brake - Red
+        gpio_write(GPIO_13, ON);
+        gpio_write(GPIO_12, OFF);
+        gpio_write(GPIO_11, OFF);
     }
-    else if (dist <= 60)
+    else // dist <= 60
     {
-      gpio_write(GPIO_13, ON);
-      delay_ms(100);
-      gpio_write(GPIO_13, ON);
-      delay_ms(100);
-    }
+        // Stop - Flashing Red (100 ms)
+        gpio_write(GPIO_12, OFF);
+        gpio_write(GPIO_11, OFF);
 
-      ser_printf("Distance: %d", dist);
-  }
+        gpio_write(GPIO_13, ON);
+        delay_ms(100);
+        gpio_write(GPIO_13, OFF);
+        delay_ms(100);
+    }
 }
+    
 
 /******************************************************************************
  *   Function: engine_temp() - Auto Brake
@@ -207,44 +219,27 @@ ser_printf("System Initialized");
  *******************************************************************************/
 void loop() 
 {
-// Task-3: 
-// Setup simulated code for the angles from the lab sheet
-//int angle;
-int angle_values[] = {10, 25, 75, 45, 100, 40, 125, 15, 150, 50, 170};
-int num_angles = sizeof(angle_values) / sizeof(angle_values[0]);
+    // Task-3: Setup simulated angles from lab sheet
+    //static int angle_values[] = {10, 25, 75, 45, 100, 40, 125, 15, 150, 50, 170};
+    //const int num_angles = sizeof(angle_values) / sizeof(angle_values[0]);
 
-// Task-1&2:
-auto_brake();
+    // Task-1&2: Auto brake
+    //auto_brake();
 
-//Bonus Task - Fill this if you wish to try the I2C bonus task
-//engine_temp();
-
-//  Task-4:
-for (int i = 0; i < num_angles; i++)
-  {
-  // Here, we set the angle to 180 if the prediction from the DNN is a positive angle
-  // and 0 if the prediction is a negative angle.
-  // This is so that it is easier to see the movement of the servo.
-  // You are welcome to pass the angle values directly to the steering function.
-  // If the servo function is written correctly, it should still work,
-  // only the movements of the servo will be more subtle
-  //if( angle > 0 )
-    //{
-    //steering(180);
-    //}
-  //else 
-    //{
-    //steering(0);
-    //}
-
-      int angle = angle_values[i];
-
-      for (int j = 0; j < 50; j++) {
-        steering(angle);
-      }
-           
-  // Uncomment the line below to see the actual angles on the servo.
-  // Remember to comment out the if-else statement above!
-  // steering(angle);
-  }
+    // Bonus Task
+    // engine_temp();
+/*
+    // Task-4: Loop through all angles
+    for (int i = 0; i < num_angles; i++)
+    {
+        int angle = angle_values[i];
+        
+        // Call steering() 50 times for each angle
+        for (int j = 0; j < 50; j++) 
+        {
+            steering(angle);
+        }
+    }
+        */
 }
+    
