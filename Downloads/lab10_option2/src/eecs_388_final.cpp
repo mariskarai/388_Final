@@ -65,69 +65,114 @@ static void steering(int pos);
  *          Checks the LiDAR distance and configures LEDs
  *******************************************************************************/
 
+ 
 static void auto_brake()
-//add while loop
-//checksum
 {
+    uint8_t tfmini_frame[9];
     uint16_t dist = 0;
+    static uint16_t prev_dist = 0;   // last good distance for smoothing
+    static bool flash_on = false;    // for non-blocking flashing red
 
-    // Look for TFmini frame header: 'Y' 'Y' (0x59 0x59)
-    if (ser_read() == 'Y' && ser_read() == 'Y')
+    // Keep reading until we get a valid TFmini frame
+    while (true)
     {
-        uint8_t dist_l = ser_read();
-        uint8_t dist_h = ser_read();
+        // Look for header 0x59 0x59
+        if (ser_read() == 0x59 && ser_read() == 0x59)
+        {
+            // Read remaining 7 bytes of the frame
+            for (int i = 0; i < 7; i++)
+            {
+                tfmini_frame[i + 2] = ser_read();
+            }
 
-        dist = (dist_h << 8) | dist_l;
+            // Insert header bytes
+            tfmini_frame[0] = 0x59;
+            tfmini_frame[1] = 0x59;
 
-        // Skip strength + reserved + checksum (5 bytes)
-        for (int i = 0; i < 5; i++) {
-            ser_read();
+            // Compute checksum (sum of first 8 bytes)
+            uint16_t sum = 0;
+            for (int i = 0; i < 8; i++)
+            {
+                sum += tfmini_frame[i];
+            }
+
+            // Validate checksum
+            if ((uint8_t)sum == tfmini_frame[8])
+            {
+                // Valid frame → extract distance
+                dist = tfmini_frame[2] | (tfmini_frame[3] << 8);
+                break;
+            }
         }
     }
 
-    // If no valid distance, don't change LEDs
-    if (dist == 0 || dist > 1200) {
-        return;
+    // Basic sanity filter: ignore clearly bad values
+    if (dist == 0 || dist > 1200)
+    {
+        return;  // don't update LEDs if distance is garbage
     }
+
+    // Simple smoothing: ignore huge jumps & average with previous
+    if (prev_dist != 0)
+    {
+        // If jump is > 200 cm, treat it as noise and stick with previous
+        if (dist > prev_dist + 200 || dist + 200 < prev_dist)
+        {
+            dist = prev_dist;
+        }
+        else
+        {
+            // Light smoothing: average current + previous
+            dist = (dist + prev_dist) / 2;
+        }
+    }
+    prev_dist = dist;
 
     // Debug print
-    ser_printf("Distance: %d\n", dist);
+    ser_printf("Distance: %d cm\n", dist);
 
-    // LED logic (mutually exclusive)
+    // ====== LED LOGIC (GPIO version) ======
+
+    gpio_write(GPIO_11, OFF);  // Blue always off in your logic
+
     if (dist > 200)
     {
-        // Safe - Green
-        gpio_write(GPIO_13, OFF); // RED
-        gpio_write(GPIO_12, ON);  // GREEN
-        gpio_write(GPIO_11, OFF); // BLUE
-    }
-    else if (dist > 100 && dist <= 200)
-    {
-        // Light brake - Yellow (Red + Green)
-        gpio_write(GPIO_13, ON);
+        // Green
         gpio_write(GPIO_12, ON);
-        gpio_write(GPIO_11, OFF);
-    }
-    else if (dist > 60 && dist <= 100)
-    {
-        // Hard brake - Red
-        gpio_write(GPIO_13, ON);
-        gpio_write(GPIO_12, OFF);
-        gpio_write(GPIO_11, OFF);
-    }
-    else // dist <= 60
-    {
-        // Stop - Flashing Red (100 ms)
-        gpio_write(GPIO_12, OFF);
-        gpio_write(GPIO_11, OFF);
-
-        gpio_write(GPIO_13, ON);
-        delay_ms(100);
         gpio_write(GPIO_13, OFF);
-        delay_ms(100);
+    }
+    else if (dist > 100)  // 100 < dist <= 200
+    {
+        // Yellow (Red + Green)
+        gpio_write(GPIO_12, ON);
+        gpio_write(GPIO_13, ON);
+    }
+    else if (dist > 60)   // 60 < dist <= 100
+    {
+        // Red
+        gpio_write(GPIO_12, OFF);
+        gpio_write(GPIO_13, ON);
+    }
+    else  // dist <= 60
+    {
+        // Flashing red (non-blocking style)
+        gpio_write(GPIO_12, OFF);
+
+        if (flash_on)
+        {
+            gpio_write(GPIO_13, ON);
+        }
+        else
+        {
+            gpio_write(GPIO_13, OFF);
+        }
+
+        // Toggle flash state each time auto_brake() is called
+        flash_on = !flash_on;
+        // NOTE: no delay_ms() here → servo and rest of loop keep running
     }
 }
-    
+
 
 /******************************************************************************
  *   Function: engine_temp() - Auto Brake
@@ -157,27 +202,8 @@ static void steering(int pos)
     // Your code goes here (Use Lab 05 for reference)
     // Check the project document to understand the task
 
-  if (pos < MIN_ANGLE) pos = MIN_ANGLE;
-  if (pos > MAX_ANGLE) pos = MAX_ANGLE;
-
-  int pulse_width = SERVO_PULSE_MIN + ((SERVO_PULSE_MAX - SERVO_PULSE_MIN) * pos / 180);
-  int off = SERVO_PERIOD - pulse_width;
-
-  gpio_write(GPIO_6, ON);
-  delay_us(pulse_width);
-  gpio_write(GPIO_6, OFF);
-
-  if (off >= 1000)
-  {
-    delay_ms(off / 1000);
-    off = off % 1000;
-  }
-  if (off > 0)
-  {
-    delay_us(off);
-  }
-
-  return;
+ pos = constrain(pos, MIN_ANGLE, MAX_ANGLE);
+ int pwm_value = SERVO_PULSE_MIN + (((SERVO_PULSE_MAX - SERVO_PULSE_MIN)/ ))
 
 }
 
@@ -220,26 +246,25 @@ ser_printf("System Initialized");
 void loop() 
 {
     // Task-3: Setup simulated angles from lab sheet
-    //static int angle_values[] = {10, 25, 75, 45, 100, 40, 125, 15, 150, 50, 170};
-    //const int num_angles = sizeof(angle_values) / sizeof(angle_values[0]);
+    static int angle_values[] = {10, 25, 75, 45, 100, 40, 125, 15, 150, 50, 170};
+    const int num_angles = sizeof(angle_values) / sizeof(angle_values[0]);
 
     // Task-1&2: Auto brake
-    //auto_brake();
+   
 
     // Bonus Task
     // engine_temp();
-/*
+
     // Task-4: Loop through all angles
     for (int i = 0; i < num_angles; i++)
-    {
-        int angle = angle_values[i];
-        
+    {        
         // Call steering() 50 times for each angle
+        int angle = angle_values[i];
         for (int j = 0; j < 50; j++) 
         {
+             auto_brake();
             steering(angle);
         }
     }
-        */
+        
 }
-    
