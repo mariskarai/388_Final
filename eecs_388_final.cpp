@@ -69,10 +69,6 @@ static void auto_brake()
     // Task-1&2: 
     // Your code goes here (Use Lab 2 & 4 for reference)
     // Check the project document to understand the task
-  int new_dist = 0
-
-  while (new_dist == 0)
-  {
     uint16_t dist = 0;
 
     if ('Y' == ser_read() && 'Y' == ser_read())
@@ -82,10 +78,8 @@ static void auto_brake()
 
       dist = (dist_h << 8) | dist_l;
 
-      for (int i = 0; i < 5; i++) ser_read;
+      for (int i = 0; i < 5; i++) ser_read();
     }
-
-    if (dist == 0 || dist > 1200) return;
 
     if (dist > 200)
     {
@@ -114,7 +108,7 @@ static void auto_brake()
     }
 
       ser_printf("Distance: %d", dist);
-  }
+
 }
 
 /******************************************************************************
@@ -148,7 +142,7 @@ static void steering(int pos)
   if (pos < MIN_ANGLE) pos = MIN_ANGLE;
   if (pos > MAX_ANGLE) pos = MAX_ANGLE;
 
-  int pulse_width = SERVO_PULSE_MIN + ((SERVO_PULSE_MAX - SERVO_PULSE_MIN) * pos / 180);
+  unsigned long pulse_width = (((unsigned long)pos * (SERVO_PULSE_MAX - SERVO_PULSE_MIN)) / 180) + SERVO_PULSE_MIN;
   int off = SERVO_PERIOD - pulse_width;
 
   gpio_write(GPIO_6, ON);
@@ -158,14 +152,11 @@ static void steering(int pos)
   if (off >= 1000)
   {
     delay_ms(off / 1000);
-    off = off % 1000;
+      delay_us(off % 1000);
   }
-  if (off > 0)
-  {
-    delay_us(off);
+  else {
+      delay_us(off);
   }
-
-  return;
 
 }
 
